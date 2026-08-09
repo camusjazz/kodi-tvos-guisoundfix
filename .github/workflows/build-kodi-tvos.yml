@@ -46,7 +46,10 @@ jobs:
             ~/kodi/tools/depends
           key: kodi-tvos-depends-v1-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
 
-      - name: Configure & build dependencies (long-running)
+       - name: Configure & build dependencies (long-running)
+        env:
+          CFLAGS: "-Wno-error=deprecated-non-prototype -Wno-error=implicit-function-declaration"
+          CXXFLAGS: "-Wno-error=deprecated-non-prototype -Wno-error=implicit-function-declaration"
         run: |
           cd "$HOME/kodi/tools/depends"
           ./bootstrap
