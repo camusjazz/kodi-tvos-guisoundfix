@@ -1,21 +1,17 @@
-name: Build Kodi tvOS (GUI sound fix)
+﻿name: Build Kodi tvOS (GUI sound fix)
 
-# 手動実行のみ。Actionsタブの "Run workflow" ボタンから起動する。
-# 誤ってpushのたびに走って無料枠を消費しないよう、on: push は付けていない。
 on:
   workflow_dispatch:
     inputs:
       xbmc_ref:
-        description: "ビルドするxbmc/xbmcのブランチ・タグ (masterまたは例: 21.2-Omega)"
+        description: "ビルドするxbmc/xbmcのブランチ・タグ (masterまたは例: 21.3-Omega)"
         required: false
         default: "master"
 
 jobs:
   build:
-    # まずはこのランナーで試す。ビルドが通らない場合はmacos-14 / macos-13も試す価値あり
-    # (公式ドキュメントはXcode 12.4/Catalina, 13.x/Montereyでのみテスト済みと明記している)
     runs-on: macos-15
-    timeout-minutes: 300  # 依存関係のフルビルドは非常に時間がかかるため長めに確保しつつ上限を設定
+    timeout-minutes: 300
 
     steps:
       - name: Checkout this repo (workflow + patch script)
@@ -36,8 +32,6 @@ jobs:
       - name: Apply GUI sound fix to KeyHandler.cpp
         run: python3 scripts/patch_keyhandler.py "$HOME/kodi"
 
-      # 依存関係のビルドが一番時間がかかる部分。同じ入力ならキャッシュを使い回す。
-      # 依存関係を作り直したい時は下のキーの "v1" を "v2" などに変えて再実行する。
       - name: Cache Kodi dependencies
         uses: actions/cache@v4
         with:
@@ -46,7 +40,7 @@ jobs:
             ~/kodi/tools/depends
           key: kodi-tvos-depends-v1-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
 
-       - name: Configure & build dependencies (long-running)
+      - name: Configure & build dependencies (long-running)
         env:
           CFLAGS: "-Wno-error=deprecated-non-prototype -Wno-error=implicit-function-declaration"
           CXXFLAGS: "-Wno-error=deprecated-non-prototype -Wno-error=implicit-function-declaration"
