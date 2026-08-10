@@ -38,7 +38,7 @@ jobs:
           path: |
             /Users/Shared/xbmc-depends
             ~/kodi/tools/depends
-          key: kodi-tvos-depends-v8-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
+          key: kodi-tvos-depends-v9-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
 
       - name: Configure & build dependencies (long-running)
         run: |
@@ -47,24 +47,21 @@ jobs:
           CFLAGS="-Wno-error" CXXFLAGS="-Wno-error" \
             ./configure --host=aarch64-apple-darwin --with-platform=tvos
 
-          # --- zlib(native): ソースを展開させてから直接パッチ ---
+          # --- zlib(native): 展開→パッチ→今度は完走させて正式にインストールする ---
           make -C native/zlib || true
           ZUTIL_H="native/zlib/arm-osx-native/zutil.h"
           if [ -f "$ZUTIL_H" ]; then
             sed -i '' '/fdopen(fd,mode) NULL/d' "$ZUTIL_H"
-            echo "zlib patched: $(grep -c 'fdopen(fd,mode) NULL' "$ZUTIL_H" || echo 0) remaining"
-          else
-            echo "WARNING: $ZUTIL_H not found"
           fi
+          make -C native/zlib
+          echo "zlib install check:"
+          find /Users/Shared/xbmc-depends -name "zlib.h" 2>/dev/null
 
-          # --- libpng(native): 同様に展開させてから直接パッチ ---
+          # --- libpng(native): 同様に展開→パッチ ---
           make -C native/libpng || true
           PNGPRIV_H="native/libpng/arm-osx-native/pngpriv.h"
           if [ -f "$PNGPRIV_H" ]; then
             sed -i '' '/include <fp\.h>/d' "$PNGPRIV_H"
-            echo "libpng patched: $(grep -c 'include <fp.h>' "$PNGPRIV_H" || echo 0) remaining"
-          else
-            echo "WARNING: $PNGPRIV_H not found"
           fi
 
           # 本体のビルドを再開
