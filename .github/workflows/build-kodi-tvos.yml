@@ -32,13 +32,21 @@ jobs:
       - name: Apply GUI sound fix to KeyHandler.cpp
         run: python3 scripts/patch_keyhandler.py "$HOME/kodi"
 
+      - name: Bump libffi to a version that supports modern Clang
+        run: |
+          cd "$HOME/kodi/tools/depends/target/libffi"
+          echo "--- before ---"; cat LIBFFI-VERSION
+          sed -i '' 's/^VERSION=.*/VERSION=3.4.6/' LIBFFI-VERSION
+          sed -i '' '/^SHA512=/d;/^SHA256=/d' LIBFFI-VERSION
+          echo "--- after ---"; cat LIBFFI-VERSION
+
       - name: Cache Kodi dependencies
         uses: actions/cache@v4
         with:
           path: |
             /Users/Shared/xbmc-depends
             ~/kodi/tools/depends
-          key: kodi-tvos-depends-v13-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
+          key: kodi-tvos-depends-v14-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
 
       - name: Configure & build dependencies (long-running)
         run: |
@@ -47,24 +55,22 @@ jobs:
           CFLAGS="-Wno-error" CXXFLAGS="-Wno-error" \
             ./configure --host=aarch64-apple-darwin --with-platform=tvos
 
-          # --- native zlib: 他に依存しないので単独実行で安全 ---
+          # --- native zlib ---
           make -C native/zlib || true
           find native/zlib -name "zutil.h" 2>/dev/null | while read -r f; do
             sed -i '' '/fdopen(fd,mode) NULL/d' "$f"
           done
           make -C native/zlib
 
-          # --- native libpng: 同様 ---
+          # --- native libpng ---
           make -C native/libpng || true
           find native/libpng -name "pngpriv.h" 2>/dev/null | while read -r f; do
             sed -i '' 's/ || defined(TARGET_OS_MAC)//' "$f"
           done
 
-          # --- ここから先(target側)は、cmake等への依存順序があるため
-          #     本体のmake -jに任せて自然な順番で進める ---
+          # --- target側は依存順序があるので本体makeに任せる ---
           make -j"$(getconf _NPROCESSORS_ONLN)" || true
 
-          # target側で展開された分を広く探してパッチ
           find target -name "zutil.h" 2>/dev/null | while read -r f; do
             echo "patching target zutil.h: $f"
             sed -i '' '/fdopen(fd,mode) NULL/d' "$f"
@@ -74,7 +80,6 @@ jobs:
             sed -i '' 's/ || defined(TARGET_OS_MAC)//' "$f"
           done
 
-          # 本体を再開して完走させる
           make -j"$(getconf _NPROCESSORS_ONLN)"
 
       - name: Show config.log on failure (diagnostics)
