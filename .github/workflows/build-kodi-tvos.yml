@@ -38,14 +38,29 @@ jobs:
           path: |
             /Users/Shared/xbmc-depends
             ~/kodi/tools/depends
-          key: kodi-tvos-depends-v6-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
+          key: kodi-tvos-depends-v7-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
 
       - name: Configure & build dependencies (long-running)
         run: |
           cd "$HOME/kodi/tools/depends"
           ./bootstrap
-          CFLAGS="-Dfdopen=fdopen -Wno-error" CXXFLAGS="-Dfdopen=fdopen -Wno-error" \
+          CFLAGS="-Wno-error" CXXFLAGS="-Wno-error" \
             ./configure --host=aarch64-apple-darwin --with-platform=tvos
+
+          # zlib(native)をまず単独ビルドしてソースを展開させる。失敗しても続行する。
+          make -C native/zlib || true
+
+          # 展開された実物のzutil.hから、問題の行を直接削除する
+          ZUTIL_H="native/zlib/arm-osx-native/zutil.h"
+          if [ -f "$ZUTIL_H" ]; then
+            echo "Before patch:"; grep -n "fdopen(fd,mode) NULL" "$ZUTIL_H" || echo "(no match found)"
+            sed -i '' '/fdopen(fd,mode) NULL/d' "$ZUTIL_H"
+            echo "After patch:"; grep -n "fdopen(fd,mode) NULL" "$ZUTIL_H" || echo "(removed OK)"
+          else
+            echo "WARNING: $ZUTIL_H not found, skipping patch"
+          fi
+
+          # 本体のビルドを再開
           make -j"$(getconf _NPROCESSORS_ONLN)"
 
       - name: Show config.log on failure (diagnostics)
