@@ -32,21 +32,13 @@ jobs:
       - name: Apply GUI sound fix to KeyHandler.cpp
         run: python3 scripts/patch_keyhandler.py "$HOME/kodi"
 
-      - name: Bump libffi to a version that supports modern Clang
-        run: |
-          cd "$HOME/kodi/tools/depends/target/libffi"
-          echo "--- before ---"; cat LIBFFI-VERSION
-          sed -i '' 's/^VERSION=.*/VERSION=3.4.6/' LIBFFI-VERSION
-          sed -i '' '/^SHA512=/d;/^SHA256=/d' LIBFFI-VERSION
-          echo "--- after ---"; cat LIBFFI-VERSION
-
       - name: Cache Kodi dependencies
         uses: actions/cache@v4
         with:
           path: |
             /Users/Shared/xbmc-depends
             ~/kodi/tools/depends
-          key: kodi-tvos-depends-v14-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
+          key: kodi-tvos-depends-v15-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
 
       - name: Configure & build dependencies (long-running)
         run: |
@@ -78,6 +70,10 @@ jobs:
           find target -name "pngpriv.h" 2>/dev/null | while read -r f; do
             echo "patching target pngpriv.h: $f"
             sed -i '' 's/ || defined(TARGET_OS_MAC)//' "$f"
+          done
+          find target -name "ffi_cfi.h" 2>/dev/null | while read -r f; do
+            echo "patching ffi_cfi.h (disable CFI directives): $f"
+            sed -i '' 's/^#ifdef HAVE_AS_CFI_PSEUDO_OP/#if 0/' "$f"
           done
 
           make -j"$(getconf _NPROCESSORS_ONLN)"
