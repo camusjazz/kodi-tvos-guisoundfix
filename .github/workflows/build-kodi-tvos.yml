@@ -38,7 +38,7 @@ jobs:
           path: |
             /Users/Shared/xbmc-depends
             ~/kodi/tools/depends
-          key: kodi-tvos-depends-v12-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
+          key: kodi-tvos-depends-v13-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
 
       - name: Configure & build dependencies (long-running)
         run: |
@@ -47,33 +47,34 @@ jobs:
           CFLAGS="-Wno-error" CXXFLAGS="-Wno-error" \
             ./configure --host=aarch64-apple-darwin --with-platform=tvos
 
-          # --- zlib(native) ---
+          # --- native zlib: 他に依存しないので単独実行で安全 ---
           make -C native/zlib || true
           find native/zlib -name "zutil.h" 2>/dev/null | while read -r f; do
             sed -i '' '/fdopen(fd,mode) NULL/d' "$f"
           done
           make -C native/zlib
 
-          # --- libpng(native) ---
+          # --- native libpng: 同様 ---
           make -C native/libpng || true
           find native/libpng -name "pngpriv.h" 2>/dev/null | while read -r f; do
             sed -i '' 's/ || defined(TARGET_OS_MAC)//' "$f"
           done
 
-          # --- zlib(target) ---
-          make -C target/zlib || true
-          find target/zlib -name "zutil.h" 2>/dev/null | while read -r f; do
+          # --- ここから先(target側)は、cmake等への依存順序があるため
+          #     本体のmake -jに任せて自然な順番で進める ---
+          make -j"$(getconf _NPROCESSORS_ONLN)" || true
+
+          # target側で展開された分を広く探してパッチ
+          find target -name "zutil.h" 2>/dev/null | while read -r f; do
+            echo "patching target zutil.h: $f"
             sed -i '' '/fdopen(fd,mode) NULL/d' "$f"
           done
-          make -C target/zlib
-
-          # --- libpng(target) ---
-          make -C target/libpng || true
-          find target/libpng -name "pngpriv.h" 2>/dev/null | while read -r f; do
+          find target -name "pngpriv.h" 2>/dev/null | while read -r f; do
+            echo "patching target pngpriv.h: $f"
             sed -i '' 's/ || defined(TARGET_OS_MAC)//' "$f"
           done
 
-          # 本体のビルドを再開（native/targetのlibpng仕上げも含め、ここで一括して完走させる）
+          # 本体を再開して完走させる
           make -j"$(getconf _NPROCESSORS_ONLN)"
 
       - name: Show config.log on failure (diagnostics)
