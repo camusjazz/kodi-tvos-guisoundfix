@@ -38,7 +38,7 @@ jobs:
           path: |
             /Users/Shared/xbmc-depends
             ~/kodi/tools/depends
-          key: kodi-tvos-depends-v11-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
+          key: kodi-tvos-depends-v12-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
 
       - name: Configure & build dependencies (long-running)
         run: |
@@ -59,25 +59,21 @@ jobs:
           find native/libpng -name "pngpriv.h" 2>/dev/null | while read -r f; do
             sed -i '' 's/ || defined(TARGET_OS_MAC)//' "$f"
           done
-          make -C native/libpng || true
 
-          # --- zlib(target, tvOS向け): 同じ問題を先回りでパッチ ---
+          # --- zlib(target) ---
           make -C target/zlib || true
           find target/zlib -name "zutil.h" 2>/dev/null | while read -r f; do
-            echo "patching target zlib: $f"
             sed -i '' '/fdopen(fd,mode) NULL/d' "$f"
           done
-          make -C target/zlib || true
+          make -C target/zlib
 
-          # --- libpng(target, tvOS向け): 同じ問題を先回りでパッチ ---
+          # --- libpng(target) ---
           make -C target/libpng || true
           find target/libpng -name "pngpriv.h" 2>/dev/null | while read -r f; do
-            echo "patching target libpng: $f"
             sed -i '' 's/ || defined(TARGET_OS_MAC)//' "$f"
           done
-          make -C target/libpng || true
 
-          # 本体のビルドを再開
+          # 本体のビルドを再開（native/targetのlibpng仕上げも含め、ここで一括して完走させる）
           make -j"$(getconf _NPROCESSORS_ONLN)"
 
       - name: Show config.log on failure (diagnostics)
