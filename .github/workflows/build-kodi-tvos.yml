@@ -38,15 +38,14 @@ jobs:
           path: |
             /Users/Shared/xbmc-depends
             ~/kodi/tools/depends
-          key: kodi-tvos-depends-v5-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
+          key: kodi-tvos-depends-v6-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
 
       - name: Configure & build dependencies (long-running)
         run: |
           cd "$HOME/kodi/tools/depends"
           ./bootstrap
-          ./configure --host=aarch64-apple-darwin --with-platform=tvos \
-            CFLAGS="-Wno-error" \
-            CXXFLAGS="-Wno-error"
+          CFLAGS="-Dfdopen=fdopen -Wno-error" CXXFLAGS="-Dfdopen=fdopen -Wno-error" \
+            ./configure --host=aarch64-apple-darwin --with-platform=tvos
           make -j"$(getconf _NPROCESSORS_ONLN)"
 
       - name: Show config.log on failure (diagnostics)
