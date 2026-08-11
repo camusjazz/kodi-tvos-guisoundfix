@@ -38,7 +38,7 @@ jobs:
           path: |
             /Users/Shared/xbmc-depends
             ~/kodi/tools/depends
-          key: kodi-tvos-depends-v15-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
+          key: kodi-tvos-depends-v16-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
 
       - name: Configure & build dependencies (long-running)
         run: |
@@ -47,36 +47,46 @@ jobs:
           CFLAGS="-Wno-error" CXXFLAGS="-Wno-error" \
             ./configure --host=aarch64-apple-darwin --with-platform=tvos
 
-          # --- native zlib ---
-          make -C native/zlib || true
-          find native/zlib -name "zutil.h" 2>/dev/null | while read -r f; do
-            sed -i '' '/fdopen(fd,mode) NULL/d' "$f"
-          done
-          make -C native/zlib
+          # 展開済みのソースに対して既知の互換性問題をまとめて修正する関数
+          patch_sources() {
+            find native target -name "zutil.h" 2>/dev/null | while read -r f; do
+              if grep -q 'fdopen(fd,mode) NULL' "$f"; then
+                echo ">>> patch zutil.h: $f"
+                sed -i '' '/fdopen(fd,mode) NULL/d' "$f"
+              fi
+            done
+            find native target -name "pngpriv.h" 2>/dev/null | while read -r f; do
+              if grep -q 'defined(TARGET_OS_MAC)' "$f"; then
+                echo ">>> patch pngpriv.h: $f"
+                sed -i '' 's/ || defined(TARGET_OS_MAC)//' "$f"
+              fi
+            done
+            find native target -name "ffi_cfi.h" 2>/dev/null | while read -r f; do
+              if grep -q '^#ifdef HAVE_AS_CFI_PSEUDO_OP' "$f"; then
+                echo ">>> patch ffi_cfi.h: $f"
+                sed -i '' 's/^#ifdef HAVE_AS_CFI_PSEUDO_OP/#if 0/' "$f"
+              fi
+            done
+          }
 
-          # --- native libpng ---
-          make -C native/libpng || true
-          find native/libpng -name "pngpriv.h" 2>/dev/null | while read -r f; do
-            sed -i '' 's/ || defined(TARGET_OS_MAC)//' "$f"
+          # 「パッチ→ビルド」を、成功するまで繰り返す
+          # (新しく展開されたソースは、次の周回で拾われる)
+          BUILT=0
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            echo "########## build pass $i ##########"
+            patch_sources
+            if make -j"$(getconf _NPROCESSORS_ONLN)"; then
+              echo "########## dependencies built successfully on pass $i ##########"
+              BUILT=1
+              break
+            fi
+            echo "########## pass $i failed, will patch and retry ##########"
           done
 
-          # --- target側は依存順序があるので本体makeに任せる ---
-          make -j"$(getconf _NPROCESSORS_ONLN)" || true
-
-          find target -name "zutil.h" 2>/dev/null | while read -r f; do
-            echo "patching target zutil.h: $f"
-            sed -i '' '/fdopen(fd,mode) NULL/d' "$f"
-          done
-          find target -name "pngpriv.h" 2>/dev/null | while read -r f; do
-            echo "patching target pngpriv.h: $f"
-            sed -i '' 's/ || defined(TARGET_OS_MAC)//' "$f"
-          done
-          find target -name "ffi_cfi.h" 2>/dev/null | while read -r f; do
-            echo "patching ffi_cfi.h (disable CFI directives): $f"
-            sed -i '' 's/^#ifdef HAVE_AS_CFI_PSEUDO_OP/#if 0/' "$f"
-          done
-
-          make -j"$(getconf _NPROCESSORS_ONLN)"
+          if [ "$BUILT" != "1" ]; then
+            echo "ERROR: dependencies did not build after 10 passes"
+            exit 1
+          fi
 
       - name: Show config.log on failure (diagnostics)
         if: failure()
