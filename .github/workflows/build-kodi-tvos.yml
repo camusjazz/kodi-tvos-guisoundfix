@@ -32,6 +32,13 @@ jobs:
       - name: Apply GUI sound fix to KeyHandler.cpp
         run: python3 scripts/patch_keyhandler.py "$HOME/kodi"
 
+      - name: Fix missing #include <vector> in TVOSNSUserDefaults.h
+        run: |
+          F="$HOME/kodi/xbmc/platform/darwin/tvos/TVOSNSUserDefaults.h"
+          echo "--- before ---"; head -20 "$F"
+          perl -0pi -e 's/#pragma once/#pragma once\n\n#include <vector>/' "$F"
+          echo "--- after ---"; head -20 "$F"
+
       - name: Cache Kodi dependencies
         uses: actions/cache@v4
         with:
@@ -47,7 +54,6 @@ jobs:
           CFLAGS="-Wno-error" CXXFLAGS="-Wno-error" \
             ./configure --host=aarch64-apple-darwin --with-platform=tvos
 
-          # 展開済みのソースに対して既知の互換性問題をまとめて修正する関数
           patch_sources() {
             find native target -name "zutil.h" 2>/dev/null | while read -r f; do
               if grep -q 'fdopen(fd,mode) NULL' "$f"; then
@@ -69,8 +75,6 @@ jobs:
             done
           }
 
-          # 「パッチ→ビルド」を、成功するまで繰り返す
-          # (新しく展開されたソースは、次の周回で拾われる)
           BUILT=0
           for i in 1 2 3 4 5 6 7 8 9 10; do
             echo "########## build pass $i ##########"
