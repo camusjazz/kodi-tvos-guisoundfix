@@ -35,9 +35,8 @@ jobs:
       - name: Fix missing #include <vector> in TVOSNSUserDefaults.h
         run: |
           F="$HOME/kodi/xbmc/platform/darwin/tvos/TVOSNSUserDefaults.h"
-          echo "--- before ---"; head -20 "$F"
           perl -0pi -e 's/#pragma once/#pragma once\n\n#include <vector>/' "$F"
-          echo "--- after ---"; head -20 "$F"
+          head -5 "$F"
 
       - name: Cache Kodi dependencies
         uses: actions/cache@v4
@@ -84,22 +83,12 @@ jobs:
               BUILT=1
               break
             fi
-            echo "########## pass $i failed, will patch and retry ##########"
           done
 
           if [ "$BUILT" != "1" ]; then
             echo "ERROR: dependencies did not build after 10 passes"
             exit 1
           fi
-
-      - name: Show config.log on failure (diagnostics)
-        if: failure()
-        run: |
-          find "$HOME/kodi/tools/depends" -name "config.log" | while read -r f; do
-            echo "===== $f ====="
-            tail -100 "$f"
-            echo
-          done
 
       - name: Generate Xcode project
         run: |
@@ -115,13 +104,35 @@ jobs:
       - name: Package unsigned IPA
         run: |
           cd "$HOME/kodi-build"
-          xcodebuild -target ipa CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
 
-      - name: Collect IPA for upload
-        run: |
+          echo "===== available targets ====="
+          xcodebuild -list || true
+
+          echo "===== try official ipa target (may not exist) ====="
+          xcodebuild -target ipa CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO || \
+            echo "(no official ipa target - will package manually)"
+
           mkdir -p "${{ github.workspace }}/dist"
-          find "$HOME/kodi-build/tools/darwin/packaging/darwin_embedded" -name "*.ipa" \
-            -exec cp {} "${{ github.workspace }}/dist/" \;
+
+          # 既に .ipa ができていればそれを採用
+          find "$HOME/kodi-build" "$HOME/kodi" -name "*.ipa" -exec cp {} "${{ github.workspace }}/dist/" \; 2>/dev/null || true
+
+          # 無ければ Kodi.app から手動で Payload を作って .ipa 化する
+          if ! ls "${{ github.workspace }}/dist"/*.ipa >/dev/null 2>&1; then
+            echo "===== searching for built Kodi.app ====="
+            find "$HOME/kodi-build" -name "*.app" -type d -maxdepth 5
+            APP=$(find "$HOME/kodi-build" -name "Kodi.app" -type d | head -1)
+            if [ -z "$APP" ]; then
+              echo "ERROR: Kodi.app not found"
+              exit 1
+            fi
+            echo "using: $APP"
+            rm -rf /tmp/ipabuild && mkdir -p /tmp/ipabuild/Payload
+            cp -R "$APP" /tmp/ipabuild/Payload/
+            (cd /tmp/ipabuild && zip -qry "${{ github.workspace }}/dist/kodi-tvos-guisoundfix.ipa" Payload)
+          fi
+
+          echo "===== result ====="
           ls -la "${{ github.workspace }}/dist"
 
       - name: Upload IPA artifact
