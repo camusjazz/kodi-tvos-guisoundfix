@@ -91,6 +91,9 @@ jobs:
           print("diagnostics added OK")
           PYEOF
 
+      - name: Add PlayActionSound to CApplication::OnAction
+        run: python3 scripts/patch_onaction.py
+
       - name: Fix missing #include <vector> in TVOSNSUserDefaults.h
         run: |
           F="$HOME/kodi/xbmc/platform/darwin/tvos/TVOSNSUserDefaults.h"
@@ -171,3 +174,4 @@ jobs:
           name: kodi-tvos-guisoundfix-ipa
           path: dist/*.ipa
           retention-days: 14
+
