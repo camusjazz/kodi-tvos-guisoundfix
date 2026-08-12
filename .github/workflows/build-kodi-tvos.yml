@@ -21,7 +21,6 @@ jobs:
         run: |
           xcodebuild -version
           python3 --version
-          java -version || true
 
       - name: Clone Kodi source
         run: |
@@ -31,6 +30,66 @@ jobs:
 
       - name: Apply GUI sound fix to KeyHandler.cpp
         run: python3 scripts/patch_keyhandler.py "$HOME/kodi"
+
+      - name: Add GUI sound diagnostics logging
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, re, sys
+
+          src = pathlib.Path.home() / "kodi" / "xbmc" / "guilib" / "GUIAudioManager.cpp"
+          if not src.exists():
+              sys.exit("ERROR: not found: %s" % src)
+
+          text = src.read_text(encoding="utf-8")
+          if "GUISOUND-DIAG" in text:
+              print("already patched"); sys.exit(0)
+
+          if '#include "utils/log.h"' not in text:
+              i = text.index("#include")
+              e = text.index("\n", i) + 1
+              text = text[:e] + '#include "utils/log.h"\n' + text[e:]
+              print("added include utils/log.h")
+
+          m = re.search(r"void\s+CGUIAudioManager::PlayActionSound\s*\(\s*const\s+CAction\s*&\s*(\w+)\s*\)\s*\{", text)
+          if m:
+              param = m.group(1)
+          else:
+              m = re.search(r"void\s+CGUIAudioManager::PlayActionSound\s*\([^)]*\)\s*\{", text)
+              if not m:
+                  sys.exit("ERROR: PlayActionSound not found")
+              param = None
+
+          body_start = m.end()
+          window = text[body_start:body_start+400]
+          lockpos = window.find("m_cs);")
+
+          if lockpos >= 0 and param and "m_actionSoundMap" in text:
+              at = body_start + lockpos + len("m_cs);")
+              log = ('\n  CLog::Log(LOGINFO, "GUISOUND-DIAG: PlayActionSound id={} enabled={} mapsize={}", '
+                     '%s.GetID(), m_bEnabled, m_actionSoundMap.size());\n' % param)
+          elif param and "m_bEnabled" in text:
+              at = body_start
+              log = ('\n  CLog::Log(LOGINFO, "GUISOUND-DIAG: PlayActionSound id={} enabled={}", '
+                     '%s.GetID(), m_bEnabled);\n' % param)
+          else:
+              at = body_start
+              log = '\n  CLog::Log(LOGINFO, "GUISOUND-DIAG: PlayActionSound called");\n'
+
+          text = text[:at] + log + text[at:]
+          print("patched PlayActionSound")
+
+          m2 = re.search(r"void\s+CGUIAudioManager::Enable\s*\(\s*bool\s+(\w+)\s*\)\s*\{", text)
+          if m2:
+              v = m2.group(1)
+              log2 = '\n  CLog::Log(LOGINFO, "GUISOUND-DIAG: Enable({}) called", %s);\n' % v
+              text = text[:m2.end()] + log2 + text[m2.end():]
+              print("patched Enable")
+          else:
+              print("WARN: Enable() not patched")
+
+          src.write_text(text, encoding="utf-8")
+          print("diagnostics added OK")
+          PYEOF
 
       - name: Fix missing #include <vector> in TVOSNSUserDefaults.h
         run: |
@@ -56,19 +115,16 @@ jobs:
           patch_sources() {
             find native target -name "zutil.h" 2>/dev/null | while read -r f; do
               if grep -q 'fdopen(fd,mode) NULL' "$f"; then
-                echo ">>> patch zutil.h: $f"
                 sed -i '' '/fdopen(fd,mode) NULL/d' "$f"
               fi
             done
             find native target -name "pngpriv.h" 2>/dev/null | while read -r f; do
               if grep -q 'defined(TARGET_OS_MAC)' "$f"; then
-                echo ">>> patch pngpriv.h: $f"
                 sed -i '' 's/ || defined(TARGET_OS_MAC)//' "$f"
               fi
             done
             find native target -name "ffi_cfi.h" 2>/dev/null | while read -r f; do
               if grep -q '^#ifdef HAVE_AS_CFI_PSEUDO_OP' "$f"; then
-                echo ">>> patch ffi_cfi.h: $f"
                 sed -i '' 's/^#ifdef HAVE_AS_CFI_PSEUDO_OP/#if 0/' "$f"
               fi
             done
@@ -79,16 +135,10 @@ jobs:
             echo "########## build pass $i ##########"
             patch_sources
             if make -j"$(getconf _NPROCESSORS_ONLN)"; then
-              echo "########## dependencies built successfully on pass $i ##########"
-              BUILT=1
-              break
+              BUILT=1; break
             fi
           done
-
-          if [ "$BUILT" != "1" ]; then
-            echo "ERROR: dependencies did not build after 10 passes"
-            exit 1
-          fi
+          [ "$BUILT" = "1" ] || { echo "ERROR: deps failed"; exit 1; }
 
       - name: Generate Xcode project
         run: |
@@ -104,35 +154,15 @@ jobs:
       - name: Package unsigned IPA
         run: |
           cd "$HOME/kodi-build"
-
-          echo "===== available targets ====="
-          xcodebuild -list || true
-
-          echo "===== try official ipa target (may not exist) ====="
-          xcodebuild -target ipa CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO || \
-            echo "(no official ipa target - will package manually)"
-
           mkdir -p "${{ github.workspace }}/dist"
-
-          # 既に .ipa ができていればそれを採用
           find "$HOME/kodi-build" "$HOME/kodi" -name "*.ipa" -exec cp {} "${{ github.workspace }}/dist/" \; 2>/dev/null || true
-
-          # 無ければ Kodi.app から手動で Payload を作って .ipa 化する
           if ! ls "${{ github.workspace }}/dist"/*.ipa >/dev/null 2>&1; then
-            echo "===== searching for built Kodi.app ====="
-            find "$HOME/kodi-build" -name "*.app" -type d -maxdepth 5
             APP=$(find "$HOME/kodi-build" -name "Kodi.app" -type d | head -1)
-            if [ -z "$APP" ]; then
-              echo "ERROR: Kodi.app not found"
-              exit 1
-            fi
-            echo "using: $APP"
+            [ -n "$APP" ] || { echo "ERROR: Kodi.app not found"; exit 1; }
             rm -rf /tmp/ipabuild && mkdir -p /tmp/ipabuild/Payload
             cp -R "$APP" /tmp/ipabuild/Payload/
             (cd /tmp/ipabuild && zip -qry "${{ github.workspace }}/dist/kodi-tvos-guisoundfix.ipa" Payload)
           fi
-
-          echo "===== result ====="
           ls -la "${{ github.workspace }}/dist"
 
       - name: Upload IPA artifact
