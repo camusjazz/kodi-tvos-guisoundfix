@@ -106,14 +106,14 @@ jobs:
           path: |
             /Users/Shared/xbmc-depends
             ~/kodi/tools/depends
-          key: kodi-tvos-depends-v16-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
+          key: kodi-tvos-depends-rel1-${{ runner.os }}-${{ github.event.inputs.xbmc_ref || 'master' }}
 
       - name: Configure & build dependencies (long-running)
         run: |
           cd "$HOME/kodi/tools/depends"
           ./bootstrap
           CFLAGS="-Wno-error" CXXFLAGS="-Wno-error" \
-            ./configure --host=aarch64-apple-darwin --with-platform=tvos
+            ./configure --host=aarch64-apple-darwin --with-platform=tvos --enable-debug=no
 
           patch_sources() {
             find native target -name "zutil.h" 2>/dev/null | while read -r f; do
@@ -174,4 +174,5 @@ jobs:
           name: kodi-tvos-guisoundfix-ipa
           path: dist/*.ipa
           retention-days: 14
+
 
