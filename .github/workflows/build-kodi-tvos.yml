@@ -28,9 +28,6 @@ jobs:
             https://github.com/xbmc/xbmc "$HOME/kodi"
           cd "$HOME/kodi" && git rev-parse HEAD
 
-      - name: Apply GUI sound fix to KeyHandler.cpp
-        run: python3 scripts/patch_keyhandler.py "$HOME/kodi"
-
       - name: Add GUI sound diagnostics logging
         run: |
           python3 - <<'PYEOF'
@@ -174,5 +171,6 @@ jobs:
           name: kodi-tvos-guisoundfix-ipa
           path: dist/*.ipa
           retention-days: 14
+
 
 
